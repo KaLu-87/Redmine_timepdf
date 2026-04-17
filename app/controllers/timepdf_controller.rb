@@ -6,7 +6,8 @@ class TimepdfController < ApplicationController
   include TimelogHelper
 
   def export
-    Rails.logger.info("[timepdf] params=#{params.to_unsafe_h.inspect}")
+    loggable_params = params.to_unsafe_h.slice(:project_id, :set_filter, :group_by, :from, :to, :format, :c, :t, :hours_by_day, :sort, :f, :op, :v)
+    Rails.logger.debug("[timepdf] params=#{loggable_params.inspect}")
     @query = TimeEntryQuery.build_from_params(params, name: '_')
     @query.project = @project if @project
 
@@ -77,7 +78,6 @@ class TimepdfController < ApplicationController
       if no_data
         doc.text "No time entries for the selected filter period.", style: :italic
       else
-        group_keys = groups.keys
         groups.each_with_index do |(gval, rows), idx|
           next if rows.empty?
 
