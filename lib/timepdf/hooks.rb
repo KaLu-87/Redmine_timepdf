@@ -10,7 +10,8 @@ module Timepdf
       controller = context[:controller]; project = context[:project]
       return '' unless controller && project && User.current.allowed_to?(:export_spenttime_pdf, project)
       controller.render_to_string(partial: 'timepdf/export_action')
-    rescue
+    rescue StandardError => e
+      Rails.logger.warn("[timepdf] hook view_timelog_index_contextual failed: #{e.class}: #{e.message}")
       ''
     end
 
@@ -18,7 +19,8 @@ module Timepdf
       controller = context[:controller]; project = context[:project]
       return '' unless controller && project && User.current.allowed_to?(:export_spenttime_pdf, project)
       controller.render_to_string(partial: 'timepdf/export_other')
-    rescue
+    rescue StandardError => e
+      Rails.logger.warn("[timepdf] hook view_timelog_index_other_formats failed: #{e.class}: #{e.message}")
       ''
     end
   end
