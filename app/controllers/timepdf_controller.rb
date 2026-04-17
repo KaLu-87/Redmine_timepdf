@@ -5,50 +5,88 @@ class TimepdfController < ApplicationController
   helper :timelog
   include TimelogHelper
 
-  def export
+def export
+  log_export_params
+  @query = build_query
+
+  entries = load_entries_with_fallback
+  columns = resolve_columns
+  group_by = @query.group_by
+  groups = group_entries(entries, group_by)
+
+  pdf = build_pdf(@project, columns, groups, group_by, entries.empty?)
+  send_pdf_response(pdf)
+end
+
+  private
+
+  def find_project
+    @project = Project.find(params[:project_id])
+  end
+
+  def log_export_params
     loggable_params = params.to_unsafe_h.slice(:project_id, :set_filter, :group_by, :from, :to, :format, :c, :t, :hours_by_day, :sort, :f, :op, :v)
     Rails.logger.debug("[timepdf] params=#{loggable_params.inspect}")
-    @query = TimeEntryQuery.build_from_params(params, name: '_')
-    @query.project = @project if @project
+  end
 
-    scope = @query.results_scope.includes(:user, :issue, :activity, :project)
-    entries = scope.to_a
-    Rails.logger.info("[timepdf] initial entries=#{entries.size}")
+  def build_query
+    query = TimeEntryQuery.build_from_params(params, name: '_')
+    query.project = @project if @project
+    query
+  end
 
-    if entries.empty?
-      from = Date.today.beginning_of_month
-      to   = Date.today.end_of_month
-      scope = TimeEntry.visible.where(project_id: @project.id, spent_on: from..to)
-                        .includes(:user, :issue, :activity, :project)
-      entries = scope.to_a
-      Rails.logger.info("[timepdf] fallback entries=#{entries.size} (#{from}..#{to})")
+  def load_entries_with_fallback
+    if no_filter_params?
+      return load_current_month_entries('no filter params provided')
     end
 
+    entries = @query.results_scope.includes(:user, :issue, :activity, :project).to_a
+    Rails.logger.info("[timepdf] initial entries=#{entries.size}")
+
+    return entries if entries.any?
+
+    load_current_month_entries('query returned no rows')
+  end
+
+  def no_filter_params?
+    filters = params[:f]
+    return true if filters.blank?
+
+    filters_array = Array(filters).reject(&:blank?)
+    filters_array.empty? || filters_array == ['']
+  end
+
+  def load_current_month_entries(reason)
+    from = Date.today.beginning_of_month
+    to = Date.today.end_of_month
+    entries = TimeEntry.visible.where(project_id: @project.id, spent_on: from..to)
+                       .includes(:user, :issue, :activity, :project)
+                       .to_a
+    Rails.logger.info("[timepdf] fallback entries=#{entries.size} (#{from}..#{to}) reason=#{reason}")
+    entries
+  end
+
+  def resolve_columns
     columns = @query.inline_columns.reject { |c| c.name == :hours }
     if columns.blank?
       default_names = [:spent_on, :user, :issue, :activity, :comments]
       columns = @query.available_columns.select { |c| default_names.include?(c.name) }
     end
     Rails.logger.info("[timepdf] columns=#{columns.map(&:name)}")
+    columns
+  end
 
-    group_by = @query.group_by
-    groups = if group_by.present?
-               entries.group_by { |e| @query.group_by_column.value(e) }
-             else
-               { nil => entries }
-             end
+  def group_entries(entries, group_by)
+    return { nil => entries } if group_by.blank?
 
-    pdf = build_pdf(@project, columns, groups, group_by, entries.empty?)
+    entries.group_by { |entry| @query.group_by_column.value(entry) }
+  end
+
+  def send_pdf_response(pdf)
     send_data pdf.render,
               filename: "spent_time_#{@project.identifier}_#{Date.today}.pdf",
               type: 'application/pdf',
               disposition: 'inline'
-  end
-
-  private
-
-  def find_project
-    @project = Project.find(params[:project_id])
   end
 
   # Landscape A4 PDF: no vertical rules, zebra rows, bold header,
