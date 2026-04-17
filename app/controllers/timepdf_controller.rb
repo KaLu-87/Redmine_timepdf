@@ -5,18 +5,18 @@ class TimepdfController < ApplicationController
   helper :timelog
   include TimelogHelper
 
-  def export
-    log_export_params
-    @query = build_query
+def export
+  log_export_params
+  @query = build_query
 
-    entries = load_entries_with_fallback
-    columns = resolve_columns
-    group_by = @query.group_by
-    groups = group_entries(entries, group_by)
+  entries = load_entries_with_fallback
+  columns = resolve_columns
+  group_by = @query.group_by
+  groups = group_entries(entries, group_by)
 
-    pdf = build_pdf(@project, columns, groups, group_by, entries.empty?)
-    send_pdf_response(pdf)
-  end
+  pdf = build_pdf(@project, columns, groups, group_by, entries.empty?)
+  send_pdf_response(pdf)
+end
 
   private
 
