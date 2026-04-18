@@ -1,7 +1,16 @@
 # Registers the plugin and its settings/permissions with Redmine.
 require_relative 'lib/timepdf/hooks'
 
-Redmine::Plugin.register :redmine_timepdf do
+module Timepdf
+  CANONICAL_PLUGIN_IDENTIFIER = :redmine_timepdf
+  PLUGIN_IDENTIFIER = File.basename(File.expand_path(__dir__)).to_sym
+end
+
+if Timepdf::PLUGIN_IDENTIFIER != Timepdf::CANONICAL_PLUGIN_IDENTIFIER
+  Rails.logger.warn("[timepdf] plugin directory '#{Timepdf::PLUGIN_IDENTIFIER}' differs from canonical '#{Timepdf::CANONICAL_PLUGIN_IDENTIFIER}'.")
+end
+
+Redmine::Plugin.register Timepdf::PLUGIN_IDENTIFIER do
   name 'Time PDF Export'
   author 'KLu – with AI assistance'
   description 'Export the Spent time list as a formatted PDF using current filters/columns/grouping.'

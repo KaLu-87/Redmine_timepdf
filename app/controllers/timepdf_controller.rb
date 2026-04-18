@@ -57,7 +57,8 @@ class TimepdfController < ApplicationController
     require 'prawn'
     require 'prawn/table'
 
-    logo_path = (Setting.plugin_redmine_timepdf['logo_path'] || '').to_s
+    plugin_settings = Setting["plugin_#{Timepdf::PLUGIN_IDENTIFIER}"] || Setting['plugin_redmine_timepdf'] || {}
+    logo_path = (plugin_settings['logo_path'] || '').to_s
 
     Prawn::Document.new(page_size: 'A4', page_layout: :landscape, margin: 36).tap do |doc|
       # Header with optional logo at top-right.
