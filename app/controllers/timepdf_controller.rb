@@ -7,65 +7,47 @@ class TimepdfController < ApplicationController
 
   def export
     Rails.logger.info("[timepdf] params=#{params.to_unsafe_h.inspect}")
-    @query = build_query
+    @query = TimeEntryQuery.build_from_params(params, name: '_')
+    @query.project = @project if @project
 
-    entries = load_entries_with_fallback
-    columns = resolve_columns
-    group_by = @query.group_by
-    groups = group_entries(entries, group_by)
-
-    pdf = build_pdf(@project, columns, groups, group_by, entries.empty?)
-    send_pdf_response(pdf)
-  end
-
-  private
-
-  def find_project
-    @project = Project.find(params[:project_id])
-  end
-
-  def build_query
-    query = TimeEntryQuery.build_from_params(params, name: '_')
-    query.project = @project if @project
-    query
-  end
-
-  def load_entries_with_fallback
-    entries = @query.results_scope.includes(:user, :issue, :activity, :project).to_a
+    scope = @query.results_scope.includes(:user, :issue, :activity, :project)
+    entries = scope.to_a
     Rails.logger.info("[timepdf] initial entries=#{entries.size}")
 
-    return entries if entries.any?
+    if entries.empty?
+      from = Date.today.beginning_of_month
+      to   = Date.today.end_of_month
+      scope = TimeEntry.visible.where(project_id: @project.id, spent_on: from..to)
+                        .includes(:user, :issue, :activity, :project)
+      entries = scope.to_a
+      Rails.logger.info("[timepdf] fallback entries=#{entries.size} (#{from}..#{to})")
+    end
 
-    from = Date.today.beginning_of_month
-    to = Date.today.end_of_month
-    entries = TimeEntry.visible.where(project_id: @project.id, spent_on: from..to)
-                       .includes(:user, :issue, :activity, :project)
-                       .to_a
-    Rails.logger.info("[timepdf] fallback entries=#{entries.size} (#{from}..#{to})")
-    entries
-  end
-
-  def resolve_columns
     columns = @query.inline_columns.reject { |c| c.name == :hours }
     if columns.blank?
       default_names = [:spent_on, :user, :issue, :activity, :comments]
       columns = @query.available_columns.select { |c| default_names.include?(c.name) }
     end
     Rails.logger.info("[timepdf] columns=#{columns.map(&:name)}")
-    columns
-  end
 
-  def group_entries(entries, group_by)
-    return { nil => entries } if group_by.blank?
+    group_by = @query.group_by
+    groups = if group_by.present?
+               entries.group_by { |e| @query.group_by_column.value(e) }
+             else
+               { nil => entries }
+             end
 
-    entries.group_by { |entry| @query.group_by_column.value(entry) }
-  end
-
-  def send_pdf_response(pdf)
+    pdf = build_pdf(@project, columns, groups, group_by, entries.empty?)
     send_data pdf.render,
               filename: "spent_time_#{@project.identifier}_#{Date.today}.pdf",
               type: 'application/pdf',
               disposition: 'inline'
+  end
+
+  private
+
+  def find_project
+    @project = Project.find(params[:project_id])
   end
 
   # Landscape A4 PDF: no vertical rules, zebra rows, bold header,
@@ -95,6 +77,7 @@ class TimepdfController < ApplicationController
       if no_data
         doc.text "No time entries for the selected filter period.", style: :italic
       else
+        group_keys = groups.keys
         groups.each_with_index do |(gval, rows), idx|
           next if rows.empty?
 
